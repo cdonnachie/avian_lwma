@@ -6,8 +6,20 @@
 #include <stdexcept>
 #include <algorithm>
 
+// Compiler compatibility for 128-bit integers
+#ifdef _MSC_VER
+    #include <intrin.h>
+    // MSVC doesn't have __int128, we'll use 64-bit operations with carry
+    #define UINT128_MAX 0xFFFFFFFFFFFFFFFFULL
+    #pragma intrinsic(_umul128)
+    #pragma intrinsic(_udiv128)
+#else
+    // GCC/Clang support
+    using uint128_t = unsigned __int128;
+#endif
+
 // Minimal 256-bit unsigned integer based on 8x32-bit limbs (little-endian).
-// NOTE: uses __uint128_t for intermediate math; build with GCC/Clang.
+// NOTE: Cross-platform compatible with MSVC, GCC, and Clang.
 // For MSVC, replace with a portable Big256 (PRs welcome).
 struct Big256 {
     std::array<uint32_t, 8> w{}; // least-significant limb at w[0]
@@ -38,26 +50,48 @@ struct Big256 {
     // return a * m (m up to 64-bit)
     static Big256 mul_u64(const Big256& a, uint64_t m) {
         Big256 r;
-        unsigned __int128 c=0;
-        for (int i=0;i<8;++i){
-            unsigned __int128 t = (unsigned __int128)a.w[i]*m + c;
+#ifdef _MSC_VER
+        uint64_t c = 0;
+        for (int i = 0; i < 8; ++i) {
+            uint64_t high, low;
+            low = _umul128(a.w[i], m, &high);
+            low += c;
+            if (low < c) high++; // Handle carry
+            r.w[i] = (uint32_t)low;
+            c = (low >> 32) + (high << 32);
+        }
+#else
+        uint128_t c = 0;
+        for (int i = 0; i < 8; ++i) {
+            uint128_t t = (uint128_t)a.w[i] * m + c;
             r.w[i] = (uint32_t)t;
             c = t >> 32;
         }
+#endif
         return r;
     }
 
     // return a / d (d up to 64-bit)
     static Big256 div_u64(const Big256& a, uint64_t d) {
-        if (d==0) throw std::runtime_error("div by zero");
+        if (d == 0) throw std::runtime_error("div by zero");
         Big256 r;
-        unsigned __int128 rem=0;
-        for (int i=7;i>=0;--i){
-            unsigned __int128 cur = (rem<<32) + a.w[i];
+#ifdef _MSC_VER
+        uint64_t rem = 0;
+        for (int i = 7; i >= 0; --i) {
+            uint64_t cur = (rem << 32) + a.w[i];
+            uint64_t q = cur / d;
+            rem = cur % d;
+            r.w[i] = (uint32_t)q;
+        }
+#else
+        uint128_t rem = 0;
+        for (int i = 7; i >= 0; --i) {
+            uint128_t cur = (rem << 32) + a.w[i];
             uint64_t q = (uint64_t)(cur / d);
             rem = cur % d;
             r.w[i] = (uint32_t)q;
         }
+#endif
         return r;
     }
 
@@ -113,11 +147,19 @@ struct Big256 {
         Big256 s{};
         int limb_shift = shift/4; int byte_shift = shift%4;
         for (int i=0;i<8;++i){
-            unsigned __int128 acc=0;
+#ifdef _MSC_VER
+            uint64_t acc = 0;
             int src = i + limb_shift;
-            if (src < 8 && src >= 0) acc |= ((unsigned __int128)w[src]) << 32;
+            if (src < 8 && src >= 0) acc |= ((uint64_t)w[src]) << 32;
+            if (src-1 < 8 && src-1 >= 0) acc |= w[src-1];
+            uint64_t val = (acc >> (byte_shift*8)) & 0xffffffffu;
+#else
+            uint128_t acc = 0;
+            int src = i + limb_shift;
+            if (src < 8 && src >= 0) acc |= ((uint128_t)w[src]) << 32;
             if (src-1 < 8 && src-1 >= 0) acc |= w[src-1];
             uint64_t val = (uint64_t)((acc >> (byte_shift*8)) & 0xffffffffu);
+#endif
             s.w[i] = (uint32_t)val;
         }
 
