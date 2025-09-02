@@ -1,0 +1,31 @@
+[build-system]
+requires = [
+  "scikit-build-core>=0.9",
+  "pybind11>=2.11",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "avian_lwma"
+version = "0.1.0"
+description = "LWMA target calculator for dual-algo Avian forks (pybind11)"
+authors = [{ name = "avian_lwma contributors" }]
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C++",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[tool.scikit-build]
+wheel.packages = ["python/avian_lwma"]
+cmake.verbose = false
+
+[tool.cibuildwheel]
+build = "cp312-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_*"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
